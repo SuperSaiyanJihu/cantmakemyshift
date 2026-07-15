@@ -46,7 +46,6 @@ const defaults: Settings = {
     "Open Homebase, tap Schedule, and select My Shifts Only.",
     "Find your shift, tap Find Cover, then Request Cover. Choose all eligible teammates or specific eligible teammates, and tap Submit.",
     "Direct-message eligible staff members to request coverage.",
-    "Direct-message the shift supervisor and explain the conflict.",
     "Wait for confirmation that coverage has been approved.",
   ],
   sameDaySteps: [
@@ -104,8 +103,11 @@ export default function Home() {
     try {
       const parsed = { ...defaults, ...JSON.parse(stored) };
       if (parsed.conflictSteps?.[1] === "Offer or release the shift using the appropriate Homebase feature.") {
-        parsed.conflictSteps = [...defaults.conflictSteps, ...parsed.conflictSteps.slice(defaults.conflictSteps.length)];
+        parsed.conflictSteps = [...defaults.conflictSteps];
       }
+      parsed.conflictSteps = parsed.conflictSteps.filter(
+        (item: string) => item !== "Direct-message the shift supervisor and explain the conflict.",
+      );
       setSettings(parsed);
       setDraft(parsed);
     } catch {}
