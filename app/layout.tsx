@@ -14,6 +14,13 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Can’t Make My Shift | Excel Aquatics",
     description: "Clear, step-by-step call-out directions for Excel Aquatics employees.",
+    manifest: "/manifest.webmanifest",
+    themeColor: "#0d493f",
+    appleWebApp: { capable: true, statusBarStyle: "default", title: "Shift Help" },
+    icons: {
+      icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+      apple: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+    },
     openGraph: { title: "Can’t Make My Shift", description: "Clear call-out directions. Two quick steps.", images: [image] },
     twitter: { card: "summary_large_image", title: "Can’t Make My Shift", description: "Clear call-out directions. Two quick steps.", images: [image] },
   };

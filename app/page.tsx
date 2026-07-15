@@ -88,6 +88,11 @@ type BusinessProfileFile = {
   settings: Settings;
 };
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
 export default function Home() {
   const [route, setRoute] = useState<Route>("home");
   const [flow, setFlow] = useState<FlowId | null>(null);
@@ -96,6 +101,9 @@ export default function Home() {
   const [settings, setSettings] = useState<Settings>(defaults);
   const [draft, setDraft] = useState<Settings>(defaults);
   const [saved, setSaved] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showInstallHelp, setShowInstallHelp] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("cant-make-my-shift-settings");
@@ -116,6 +124,29 @@ export default function Home() {
       setDraft(parsed);
     } catch {}
   }, []);
+
+  useEffect(() => {
+    setIsInstalled(window.matchMedia("(display-mode: standalone)").matches || ("standalone" in navigator && Boolean((navigator as Navigator & { standalone?: boolean }).standalone)));
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
+
+    const capturePrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+    window.addEventListener("beforeinstallprompt", capturePrompt);
+    return () => window.removeEventListener("beforeinstallprompt", capturePrompt);
+  }, []);
+
+  async function installApp() {
+    if (!installPrompt) {
+      setShowInstallHelp(true);
+      return;
+    }
+    await installPrompt.prompt();
+    const result = await installPrompt.userChoice;
+    if (result.outcome === "accepted") setIsInstalled(true);
+    setInstallPrompt(null);
+  }
 
   const steps = useMemo(() => {
     if (flow === "emergency") return settings.emergencySteps;
@@ -207,6 +238,7 @@ export default function Home() {
               <strong>This is an instruction tool.</strong>
               <span>It does not replace Homebase, contact coworkers, or approve an absence.</span>
             </div>
+            {!isInstalled && <button className="install-button" onClick={installApp}><span aria-hidden="true">↓</span><span><strong>Install this app</strong><small>Add it to your phone’s home screen</small></span></button>}
             <button className="settings-link" onClick={() => setRoute("settings")}>Business profile & leadership settings</button>
           </section>
         )}
@@ -301,6 +333,20 @@ export default function Home() {
             </div>
             <button className="secondary" onClick={() => { setDraft(defaults); setSettings(defaults); window.localStorage.removeItem("cant-make-my-shift-settings"); }}>Restore Excel Aquatics defaults</button>
           </section>
+        )}
+
+        {showInstallHelp && (
+          <div className="modal-backdrop" role="presentation" onClick={() => setShowInstallHelp(false)}>
+            <section className="install-modal" role="dialog" aria-modal="true" aria-labelledby="install-title" onClick={(event) => event.stopPropagation()}>
+              <button className="modal-close" aria-label="Close install instructions" onClick={() => setShowInstallHelp(false)}>×</button>
+              <div className="install-icon" aria-hidden="true">↓</div>
+              <p className="step-label">Install on your phone</p>
+              <h2 id="install-title">Keep Shift Help one tap away.</h2>
+              <div className="device-steps"><strong>On iPhone or iPad</strong><span>Tap the Share button in Safari, then choose <b>Add to Home Screen</b> and tap Add.</span></div>
+              <div className="device-steps"><strong>On Android</strong><span>Open the browser menu and choose <b>Install app</b> or <b>Add to Home screen</b>.</span></div>
+              <button className="primary" onClick={() => setShowInstallHelp(false)}>Got it</button>
+            </section>
+          </div>
         )}
       </div>
     </main>
