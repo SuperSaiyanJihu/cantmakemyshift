@@ -1,8 +1,13 @@
 # Can’t Make My Shift
 
-A mobile-first instruction tool that guides employees through their employer’s existing call-out process. The employee workflow is driven by a reusable business profile containing the organization name, phone number, scheduling-platform link, definitions, examples, and workflow steps.
+A mobile-first instruction tool that guides employees through their employer’s existing call-out process. The employee experience is driven entirely by a reusable business profile that is editable in-app under “Business profile & leadership settings”:
 
-The prototype keeps one active business profile in browser storage. Leadership can edit, export, and import profiles without employee accounts or a multi-tenant backend. A later hosted version can persist the same profile shape in a database and add administrator authentication without changing the employee flow.
+- organization name, main phone number, and scheduling-platform name and link
+- all screen copy (home, reason, emergency-definition, and completion screens)
+- the workflows themselves: add, remove, reorder, and rename them
+- each workflow’s steps: add, remove, reorder, and edit text, plus an optional note and an action button per step (call the main line, open the scheduling platform, or none)
+
+The prototype keeps one active business profile in browser storage. Leadership can edit, export, and import profiles without employee accounts or a multi-tenant backend. Profiles exported by the previous version (v1) are migrated automatically on import or first load. A later hosted version can persist the same profile shape in a database and add administrator authentication without changing the employee flow.
 
 ## Prerequisites
 
