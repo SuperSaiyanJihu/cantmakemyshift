@@ -98,6 +98,39 @@ test("drops the retired supervisor-DM step when migrating v1 conflict workflows"
   assert.deepEqual(migrated.flows[1].steps.map((step) => step.text), ["Request cover in the app.", "Wait for approval."]);
 });
 
+test("resets v1 conflict steps when the retired offer-or-release step is present", () => {
+  const migrated = migrateLegacySettings({
+    conflictSteps: ["Anything", "Offer or release the shift using the appropriate Homebase feature.", "Whatever"],
+  });
+  assert.deepEqual(
+    migrated.flows[1].steps.map((step) => step.text),
+    defaults.flows[1].steps.map((step) => step.text),
+  );
+});
+
+test("corrupted v2 payloads are repaired as v2, not misread as v1", () => {
+  const parsed = parseStoredSettings(JSON.stringify({ organization: "V2 Org", homeHeadline: "Custom headline", flows: null }));
+  assert.equal(parsed.organization, "V2 Org");
+  assert.equal(parsed.homeHeadline, "Custom headline");
+  assert.equal(parsed.flows.length, 3);
+});
+
+test("duplicate ids from imported files are regenerated", () => {
+  const normalized = normalizeSettings({
+    flows: [
+      { id: "dup", label: "A", steps: [{ id: "s", text: "x", action: "none", note: "" }] },
+      { id: "dup", label: "B", steps: [{ id: "s", text: "y", action: "none", note: "" }] },
+    ],
+  });
+  const ids = [normalized.flows[0].id, normalized.flows[1].id, normalized.flows[0].steps[0].id, normalized.flows[1].steps[0].id];
+  assert.equal(new Set(ids).size, 4);
+});
+
+test("a cleared platform name is preserved rather than reverting to Homebase", () => {
+  const normalized = normalizeSettings({ ...defaults, platformName: "" });
+  assert.equal(normalized.platformName, "");
+});
+
 test("parseStoredSettings handles v1, v2, and invalid payloads", () => {
   const legacy = parseStoredSettings(JSON.stringify({ organization: "Legacy Org", emergencySteps: ["Call in."] }));
   assert.equal(legacy.organization, "Legacy Org");

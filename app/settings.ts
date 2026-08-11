@@ -36,9 +36,13 @@ export type Settings = {
   reasonSubtitle: string;
   emergencyInfoTitle: string;
   emergencyDefinition: string;
+  emergencyExamplesTitle: string;
   emergencyExamples: string[];
+  nonEmergencyExamplesTitle: string;
   nonEmergencyExamples: string[];
   emergencyNotice: string;
+  callInstruction: string;
+  platformInstruction: string;
   completeLede: string;
   completeReminder: string;
   flows: Flow[];
@@ -92,6 +96,7 @@ export const defaults: Settings = {
   emergencyInfoTitle: "What counts as an emergency?",
   emergencyDefinition:
     "An emergency is a sudden, serious, and unexpected situation that makes it unsafe, unreasonable, or impossible for you to work your scheduled shift or complete the normal coverage process.",
+  emergencyExamplesTitle: "May be an emergency",
   emergencyExamples: [
     "Sudden illness that prevents you from safely working",
     "Serious injury or medical emergency",
@@ -99,6 +104,7 @@ export const defaults: Settings = {
     "Car accident",
     "An unexpected situation involving immediate safety or urgent care",
   ],
+  nonEmergencyExamplesTitle: "Generally not an emergency",
   nonEmergencyExamples: [
     "Forgetting the shift or making other plans",
     "Transportation issues that could reasonably be addressed",
@@ -107,6 +113,8 @@ export const defaults: Settings = {
     "Wanting additional time off or failing to request it in advance",
   ],
   emergencyNotice: "Leadership will review the circumstances. Selecting “emergency” does not automatically excuse the absence.",
+  callInstruction: "Call {phone} and leave a voicemail explaining the situation.",
+  platformInstruction: "Complete this action in {platform} before continuing.",
   completeLede: "This app did not submit an absence or notify anyone for you.",
   completeReminder: "You are responsible for completing every action and following leadership’s response.",
   flows: [
@@ -235,22 +243,31 @@ function asStringArray(value: unknown, fallback: string[]): string[] {
   return value.filter((item): item is string => typeof item === "string");
 }
 
-function normalizeStep(raw: unknown): FlowStep {
+// Imported files can carry missing or duplicate ids; every id must end up unique
+// because they are used as React keys.
+function claimId(candidate: unknown, used: Set<string>): string {
+  let id = typeof candidate === "string" ? candidate : "";
+  while (!id || used.has(id)) id = newId();
+  used.add(id);
+  return id;
+}
+
+function normalizeStep(raw: unknown, usedIds: Set<string>): FlowStep {
   const step = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const action = step.action === "call" || step.action === "platform" || step.action === "none" ? step.action : "none";
   return {
-    id: asString(step.id, "") || newId(),
+    id: claimId(step.id, usedIds),
     text: asString(step.text, ""),
     action,
     note: asString(step.note, ""),
   };
 }
 
-function normalizeFlow(raw: unknown): Flow {
+function normalizeFlow(raw: unknown, usedIds: Set<string>): Flow {
   const flow = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const accent = FLOW_ACCENTS.includes(flow.accent as FlowAccent) ? (flow.accent as FlowAccent) : "green";
   return {
-    id: asString(flow.id, "") || newId(),
+    id: claimId(flow.id, usedIds),
     label: asString(flow.label, "Untitled workflow"),
     description: asString(flow.description, ""),
     icon: asString(flow.icon, "•") || "•",
@@ -259,16 +276,17 @@ function normalizeFlow(raw: unknown): Flow {
     warning: asString(flow.warning, ""),
     done: asString(flow.done, "You have reviewed the required directions."),
     showEmergencyInfo: flow.showEmergencyInfo === true,
-    steps: Array.isArray(flow.steps) ? flow.steps.map(normalizeStep) : [],
+    steps: Array.isArray(flow.steps) ? flow.steps.map((step) => normalizeStep(step, usedIds)) : [],
   };
 }
 
 export function normalizeSettings(raw: unknown): Settings {
   const value = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const usedIds = new Set<string>();
   return {
     organization: asString(value.organization, defaults.organization),
     phone: asString(value.phone, defaults.phone),
-    platformName: asString(value.platformName, defaults.platformName) || defaults.platformName,
+    platformName: asString(value.platformName, defaults.platformName),
     platformUrl: asString(value.platformUrl, defaults.platformUrl),
     homeHeadline: asString(value.homeHeadline, defaults.homeHeadline),
     homeLede: asString(value.homeLede, defaults.homeLede),
@@ -278,12 +296,18 @@ export function normalizeSettings(raw: unknown): Settings {
     reasonSubtitle: asString(value.reasonSubtitle, defaults.reasonSubtitle),
     emergencyInfoTitle: asString(value.emergencyInfoTitle, defaults.emergencyInfoTitle),
     emergencyDefinition: asString(value.emergencyDefinition, defaults.emergencyDefinition),
+    emergencyExamplesTitle: asString(value.emergencyExamplesTitle, defaults.emergencyExamplesTitle),
     emergencyExamples: asStringArray(value.emergencyExamples, defaults.emergencyExamples),
+    nonEmergencyExamplesTitle: asString(value.nonEmergencyExamplesTitle, defaults.nonEmergencyExamplesTitle),
     nonEmergencyExamples: asStringArray(value.nonEmergencyExamples, defaults.nonEmergencyExamples),
     emergencyNotice: asString(value.emergencyNotice, defaults.emergencyNotice),
+    callInstruction: asString(value.callInstruction, defaults.callInstruction),
+    platformInstruction: asString(value.platformInstruction, defaults.platformInstruction),
     completeLede: asString(value.completeLede, defaults.completeLede),
     completeReminder: asString(value.completeReminder, defaults.completeReminder),
-    flows: Array.isArray(value.flows) ? value.flows.map(normalizeFlow) : defaults.flows.map((flow) => cloneFlow(flow)),
+    flows: Array.isArray(value.flows)
+      ? value.flows.map((flow) => normalizeFlow(flow, usedIds))
+      : defaults.flows.map((flow) => cloneFlow(flow)),
   };
 }
 
@@ -331,7 +355,11 @@ function applyLegacyConflictPatches(steps: string[]): string[] {
 
 export function isLegacySettings(raw: unknown): boolean {
   if (!raw || typeof raw !== "object") return false;
-  return !Array.isArray((raw as Record<string, unknown>).flows);
+  const value = raw as Record<string, unknown>;
+  if (Array.isArray(value.flows)) return false;
+  // Only treat flow-less payloads as v1 when they carry a v1-only field;
+  // a corrupted v2 payload should be repaired as v2, not rebuilt from v1 defaults.
+  return ["emergencySteps", "conflictSteps", "sameDaySteps", "homebaseUrl"].some((key) => key in value);
 }
 
 // Converts a v1 profile into the v2 shape, attaching the same step actions the

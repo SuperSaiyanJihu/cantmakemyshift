@@ -15,6 +15,16 @@ import {
 
 type Route = "home" | "reason" | "emergency-info" | "workflow" | "complete" | "settings";
 
+// Renders an instruction template, substituting {phone} (bolded) and {platform}.
+function renderInstruction(template: string, phone: string, platformName: string) {
+  const platform = platformName || "your scheduling platform";
+  return template.split(/(\{phone\}|\{platform\})/).map((part, index) => {
+    if (part === "{phone}") return <strong key={index}>{phone}</strong>;
+    if (part === "{platform}") return <span key={index}>{platform}</span>;
+    return <span key={index}>{part}</span>;
+  });
+}
+
 export default function Home() {
   const [route, setRoute] = useState<Route>("home");
   const [flowId, setFlowId] = useState<string | null>(null);
@@ -22,6 +32,9 @@ export default function Home() {
   const [checked, setChecked] = useState<boolean[]>([]);
   const [settings, setSettings] = useState<Settings>(() => cloneSettings(defaults));
   const [draft, setDraft] = useState<Settings>(() => cloneSettings(defaults));
+  // Remounts the editor whenever the draft is replaced from outside the form
+  // (initial load, import, restore, discard) so its field-local state resets.
+  const [draftVersion, setDraftVersion] = useState(0);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -33,6 +46,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSettings(parsed);
     setDraft(cloneSettings(parsed));
+    setDraftVersion((version) => version + 1);
   }, []);
 
   useEffect(() => {
@@ -71,7 +85,12 @@ export default function Home() {
   }
 
   function persist(next: Settings) {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      window.alert("Your changes are applied for this visit, but the browser refused to store them (storage may be full or blocked). They will not survive a reload.");
+      return;
+    }
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2200);
   }
@@ -79,6 +98,13 @@ export default function Home() {
   function saveSettings() {
     setSettings(draft);
     persist(draft);
+  }
+
+  function discardDraft() {
+    if (window.confirm("Discard your unsaved changes and go back to the last saved profile?")) {
+      setDraft(cloneSettings(settings));
+      setDraftVersion((version) => version + 1);
+    }
   }
 
   function exportProfile() {
@@ -93,20 +119,24 @@ export default function Home() {
 
   async function importProfile(file?: File) {
     if (!file) return;
+    let next: Settings;
     try {
-      const next = settingsFromProfileFile(await file.text());
-      setDraft(cloneSettings(next));
-      setSettings(next);
-      persist(next);
+      next = settingsFromProfileFile(await file.text());
     } catch {
       window.alert("That file is not a valid Can’t Make My Shift business profile.");
+      return;
     }
+    setDraft(cloneSettings(next));
+    setSettings(next);
+    setDraftVersion((version) => version + 1);
+    persist(next);
   }
 
   function restoreDefaults() {
     const next = cloneSettings(defaults);
     setDraft(next);
     setSettings(cloneSettings(defaults));
+    setDraftVersion((version) => version + 1);
     window.localStorage.removeItem(STORAGE_KEY);
   }
 
@@ -167,8 +197,8 @@ export default function Home() {
             <h1>{settings.emergencyInfoTitle}</h1>
             <div className="definition">{settings.emergencyDefinition}</div>
             <div className="example-grid">
-              <div><h2><span className="dot good" /> May be an emergency</h2><ul>{settings.emergencyExamples.map((item) => <li key={item}>{item}</li>)}</ul></div>
-              <div><h2><span className="dot no" /> Generally not an emergency</h2><ul>{settings.nonEmergencyExamples.map((item) => <li key={item}>{item}</li>)}</ul></div>
+              <div><h2><span className="dot good" /> {settings.emergencyExamplesTitle}</h2><ul>{settings.emergencyExamples.map((item) => <li key={item}>{item}</li>)}</ul></div>
+              <div><h2><span className="dot no" /> {settings.nonEmergencyExamplesTitle}</h2><ul>{settings.nonEmergencyExamples.map((item) => <li key={item}>{item}</li>)}</ul></div>
             </div>
             <div className="notice">{settings.emergencyNotice}</div>
             <button className="primary" onClick={() => enterSteps(flow)}>I understand — show me the steps</button>
@@ -184,11 +214,11 @@ export default function Home() {
             {current.note && <div className="example-callout">{current.note}</div>}
             <div className="step-number">{String(step + 1).padStart(2, "0")}</div>
             <h1>{current.text}</h1>
-            {current.action === "call" && <p className="instruction">Call <strong>{settings.phone}</strong> and leave a voicemail explaining the situation.</p>}
-            {current.action === "platform" && <p className="instruction">Complete this action in {settings.platformName} before continuing.</p>}
+            {current.action === "call" && <p className="instruction">{renderInstruction(settings.callInstruction, settings.phone, settings.platformName)}</p>}
+            {current.action === "platform" && <p className="instruction">{renderInstruction(settings.platformInstruction, settings.phone, settings.platformName)}</p>}
             <div className="action-row">
               {current.action === "call" && <a className="action-button call" href={`tel:${settings.phone.replace(/[^\d+]/g, "")}`}>☎ Call Now</a>}
-              {current.action === "platform" && <a className="action-button homebase" href={settings.platformUrl} target="_blank" rel="noreferrer">Open {settings.platformName} ↗</a>}
+              {current.action === "platform" && <a className="action-button homebase" href={settings.platformUrl} target="_blank" rel="noreferrer">Open {settings.platformName || "scheduling platform"} ↗</a>}
             </div>
             <label className="confirmation">
               <input type="checkbox" checked={!!checked[step]} onChange={(event) => setChecked((state) => { const next = [...state]; next[step] = event.target.checked; return next; })} />
@@ -220,8 +250,9 @@ export default function Home() {
             <h1>Make the directions yours.</h1>
             <p className="subtle">Every screen, workflow, and step below is editable. Save to apply your changes on this device, or export the profile to reuse the same directions elsewhere—no employee accounts required.</p>
             <div className="profile-summary"><span className="brand-mark" aria-hidden="true">{draft.organization.charAt(0) || "B"}</span><span><strong>{draft.organization || "New business"}</strong><small>Active business profile</small></span></div>
-            <SettingsEditor draft={draft} onChange={setDraft} />
+            <SettingsEditor key={draftVersion} draft={draft} onChange={setDraft} />
             <button className="primary" onClick={saveSettings}>{saved ? "Saved ✓" : "Save settings"}</button>
+            <button className="secondary" onClick={discardDraft}>Discard unsaved changes</button>
             <div className="profile-actions">
               <button className="secondary" onClick={exportProfile}>Export business profile</button>
               <label className="secondary import-button">Import business profile<input type="file" accept="application/json,.json" onChange={(event) => importProfile(event.target.files?.[0])} /></label>
