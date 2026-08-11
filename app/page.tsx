@@ -133,6 +133,7 @@ export default function Home() {
   }
 
   function restoreDefaults() {
+    if (!window.confirm("Replace the current business profile with the Excel Aquatics defaults? This deletes your saved customizations.")) return;
     const next = cloneSettings(defaults);
     setDraft(next);
     setSettings(cloneSettings(defaults));
@@ -197,8 +198,8 @@ export default function Home() {
             <h1>{settings.emergencyInfoTitle}</h1>
             <div className="definition">{settings.emergencyDefinition}</div>
             <div className="example-grid">
-              <div><h2><span className="dot good" /> {settings.emergencyExamplesTitle}</h2><ul>{settings.emergencyExamples.map((item) => <li key={item}>{item}</li>)}</ul></div>
-              <div><h2><span className="dot no" /> {settings.nonEmergencyExamplesTitle}</h2><ul>{settings.nonEmergencyExamples.map((item) => <li key={item}>{item}</li>)}</ul></div>
+              <div><h2><span className="dot good" /> {settings.emergencyExamplesTitle}</h2><ul>{settings.emergencyExamples.map((item, index) => <li key={index}>{item}</li>)}</ul></div>
+              <div><h2><span className="dot no" /> {settings.nonEmergencyExamplesTitle}</h2><ul>{settings.nonEmergencyExamples.map((item, index) => <li key={index}>{item}</li>)}</ul></div>
             </div>
             <div className="notice">{settings.emergencyNotice}</div>
             <button className="primary" onClick={() => enterSteps(flow)}>I understand — show me the steps</button>
@@ -249,13 +250,13 @@ export default function Home() {
             <p className="step-label">Business profile</p>
             <h1>Make the directions yours.</h1>
             <p className="subtle">Every screen, workflow, and step below is editable. Save to apply your changes on this device, or export the profile to reuse the same directions elsewhere—no employee accounts required.</p>
-            <div className="profile-summary"><span className="brand-mark" aria-hidden="true">{draft.organization.charAt(0) || "B"}</span><span><strong>{draft.organization || "New business"}</strong><small>Active business profile</small></span></div>
+            <div className="profile-summary"><span className="brand-mark" aria-hidden="true">{draft.organization.charAt(0) || "B"}</span><span><strong>{draft.organization || "New business"}</strong><small>Editing this profile — save to apply</small></span></div>
             <SettingsEditor key={draftVersion} draft={draft} onChange={setDraft} />
             <button className="primary" onClick={saveSettings}>{saved ? "Saved ✓" : "Save settings"}</button>
             <button className="secondary" onClick={discardDraft}>Discard unsaved changes</button>
             <div className="profile-actions">
               <button className="secondary" onClick={exportProfile}>Export business profile</button>
-              <label className="secondary import-button">Import business profile<input type="file" accept="application/json,.json" onChange={(event) => importProfile(event.target.files?.[0])} /></label>
+              <label className="secondary import-button">Import business profile<input type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; importProfile(file); }} /></label>
             </div>
             <button className="secondary" onClick={restoreDefaults}>Restore Excel Aquatics defaults</button>
           </section>

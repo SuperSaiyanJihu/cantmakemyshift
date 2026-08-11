@@ -221,7 +221,7 @@ export const defaults: Settings = {
           id: "same-day-4",
           text: "Call the main line and leave a voicemail explaining the unusual circumstances.",
           action: "call",
-          note: "",
+          note: "Do not include a diagnosis or medical details.",
         },
         {
           id: "same-day-5",
@@ -270,7 +270,7 @@ function normalizeFlow(raw: unknown, usedIds: Set<string>): Flow {
     id: claimId(flow.id, usedIds),
     label: asString(flow.label, "Untitled workflow"),
     description: asString(flow.description, ""),
-    icon: asString(flow.icon, "•") || "•",
+    icon: asString(flow.icon, "•"),
     accent,
     intro: asString(flow.intro, ""),
     warning: asString(flow.warning, ""),
@@ -339,9 +339,14 @@ type LegacySettings = {
 
 const legacyConflictDefaults = defaults.flows[1].steps.map((step) => step.text);
 
-function applyLegacyConflictPatches(steps: string[]): string[] {
-  let patched = steps;
-  if (patched[1] === "Offer or release the shift using the appropriate Homebase feature.") {
+// The retired-step sentinel must be tested on the raw stored array, before any
+// non-string filtering shifts indices — that is the order the old app used.
+function applyLegacyConflictPatches(raw: unknown): string[] {
+  const rawArray = Array.isArray(raw) ? raw : null;
+  let patched = rawArray
+    ? rawArray.filter((item): item is string => typeof item === "string")
+    : [...legacyConflictDefaults];
+  if (rawArray && rawArray[1] === "Offer or release the shift using the appropriate Homebase feature.") {
     patched = [...legacyConflictDefaults];
   }
   return patched
@@ -377,7 +382,7 @@ export function migrateLegacySettings(raw: unknown): Settings {
   base.nonEmergencyExamples = asStringArray(legacy.nonEmergencyExamples, base.nonEmergencyExamples);
 
   const emergencySteps = asStringArray(legacy.emergencySteps, defaults.flows[0].steps.map((step) => step.text));
-  const conflictSteps = applyLegacyConflictPatches(asStringArray(legacy.conflictSteps, legacyConflictDefaults));
+  const conflictSteps = applyLegacyConflictPatches(legacy.conflictSteps);
   const sameDaySteps = asStringArray(legacy.sameDaySteps, defaults.flows[2].steps.map((step) => step.text));
 
   base.flows[0].steps = emergencySteps.map((text, index) =>
@@ -392,7 +397,12 @@ export function migrateLegacySettings(raw: unknown): Settings {
     makeStep({
       text,
       action: index === 3 ? "call" : index < 3 ? "platform" : "none",
-      note: index === 0 ? "Example: Your full-time employer unexpectedly requires you to work, and missing it may threaten your primary employment." : "",
+      note:
+        index === 0
+          ? "Example: Your full-time employer unexpectedly requires you to work, and missing it may threaten your primary employment."
+          : index === 3
+            ? "Do not include a diagnosis or medical details."
+            : "",
     }),
   );
 

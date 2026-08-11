@@ -108,6 +108,30 @@ test("resets v1 conflict steps when the retired offer-or-release step is present
   );
 });
 
+test("detects the offer-or-release sentinel on the raw array, before non-string filtering", () => {
+  const migrated = migrateLegacySettings({
+    conflictSteps: [null, "Offer or release the shift using the appropriate Homebase feature.", "Custom"],
+  });
+  assert.deepEqual(
+    migrated.flows[1].steps.map((step) => step.text),
+    defaults.flows[1].steps.map((step) => step.text),
+  );
+});
+
+test("call steps carry the medical-privacy note in defaults and migrated profiles", () => {
+  assert.match(defaults.flows[2].steps[3].note, /diagnosis or medical details/);
+  const migrated = migrateLegacySettings({
+    sameDaySteps: ["A", "B", "C", "Call the line.", "Wait."],
+  });
+  assert.match(migrated.flows[2].steps[3].note, /diagnosis or medical details/);
+  assert.match(migrated.flows[0].steps[0].note, /diagnosis or medical details/);
+});
+
+test("a cleared flow icon round-trips instead of reverting to the bullet", () => {
+  const cleared = { ...defaults, flows: defaults.flows.map((flow, i) => (i === 0 ? { ...flow, icon: "" } : flow)) };
+  assert.equal(normalizeSettings(cleared).flows[0].icon, "");
+});
+
 test("corrupted v2 payloads are repaired as v2, not misread as v1", () => {
   const parsed = parseStoredSettings(JSON.stringify({ organization: "V2 Org", homeHeadline: "Custom headline", flows: null }));
   assert.equal(parsed.organization, "V2 Org");
