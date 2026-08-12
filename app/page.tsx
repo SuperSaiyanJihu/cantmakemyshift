@@ -212,9 +212,10 @@ export default function Home() {
             <div className="progress-row"><span>{flow.label}</span><b>{step + 1} of {steps.length}</b></div>
             <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
             <p className="workflow-intro">{flow.intro}</p>
-            {current.note && <div className="example-callout">{current.note}</div>}
             <div className="step-number">{String(step + 1).padStart(2, "0")}</div>
-            <h1>{current.text}</h1>
+            {/* Long instructions would otherwise fill the screen at display size. */}
+            <h1 className={current.text.length > 140 ? "long-step" : undefined}>{current.text}</h1>
+            {current.note && <div className="step-note">{current.note}</div>}
             {current.action === "call" && <p className="instruction">{renderInstruction(settings.callInstruction, settings.phone, settings.platformName)}</p>}
             {current.action === "platform" && <p className="instruction">{renderInstruction(settings.platformInstruction, settings.phone, settings.platformName)}</p>}
             <div className="action-row">

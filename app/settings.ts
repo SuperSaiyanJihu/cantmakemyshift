@@ -181,9 +181,9 @@ export const defaults: Settings = {
         },
         {
           id: "conflict-4",
-          text: "Wait for confirmation that coverage has been approved. If coverage is not found by 7 days before the shift—or as soon as possible when the shift is less than 7 days away—direct-message the Program Director in Homebase. Explain the difficulty finding coverage, list everyone you contacted, and identify who responded.",
+          text: "Wait for confirmation that coverage has been approved.",
           action: "platform",
-          note: "",
+          note: "If coverage is not found by 7 days before the shift—or as soon as possible when the shift is less than 7 days away—direct-message the Program Director in Homebase. Explain the difficulty finding coverage, list everyone you contacted, and identify who responded.",
         },
       ],
     },
@@ -392,7 +392,11 @@ export function migrateLegacySettings(raw: unknown): Settings {
       note: index === 0 ? "Do not include a diagnosis or medical details." : "",
     }),
   );
-  base.flows[1].steps = conflictSteps.map((text) => makeStep({ text, action: "platform" }));
+  // Steps that still match a default keep that default's note, so migrated
+  // profiles get the same supporting detail as a fresh install.
+  base.flows[1].steps = conflictSteps.map((text) =>
+    makeStep({ text, action: "platform", note: defaults.flows[1].steps.find((step) => step.text === text)?.note ?? "" }),
+  );
   base.flows[2].steps = sameDaySteps.map((text, index) =>
     makeStep({
       text,

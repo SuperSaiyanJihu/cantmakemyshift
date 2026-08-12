@@ -45,6 +45,18 @@ test("server-renders the call-out home screen with default profile copy", async 
   assert.match(html, /Business profile &amp; leadership settings/);
 });
 
+test("step instructions stay headline-length, with detail carried by notes", () => {
+  for (const flow of defaults.flows) {
+    for (const step of flow.steps) {
+      assert.ok(
+        step.text.length <= 140,
+        `step "${step.text.slice(0, 40)}…" in ${flow.label} is ${step.text.length} chars; move detail into its note`,
+      );
+    }
+  }
+  assert.match(defaults.flows[1].steps[3].note, /direct-message the Program Director/);
+});
+
 test("default profile keeps the original workflows and step actions", () => {
   assert.equal(defaults.flows.length, 3);
   const [emergency, conflict, sameDay] = defaults.flows;
@@ -82,7 +94,8 @@ test("migrates v1 settings, preserving customized steps and hardcoded action pos
   assert.deepEqual(emergency.steps.map((step) => step.text), ["Call the office.", "Message the manager."]);
 
   assert.deepEqual(conflict.steps.map((step) => step.action), ["platform", "platform"]);
-  assert.match(conflict.steps[1].text, /direct-message the Program Director/);
+  assert.equal(conflict.steps[1].text, "Wait for confirmation that coverage has been approved.");
+  assert.match(conflict.steps[1].note, /direct-message the Program Director/);
 
   assert.deepEqual(sameDay.steps.map((step) => step.action), ["platform", "platform", "platform", "call", "none"]);
 });
