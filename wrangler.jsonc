@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cantmakemyshift",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-08-12",
+  // Required: the Clerk token check and the route handlers read process.env,
+  // which only exists on the Workers runtime with Node compatibility enabled.
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "dist/client",
+    "not_found_handling": "none",
+    "binding": "ASSETS"
+  },
+  "images": { "binding": "IMAGES" },
+  "observability": { "enabled": true }
+
+  // Secrets are NOT set here — they would be committed. Set them once per
+  // environment with:
+  //   npx wrangler secret put CLERK_SECRET_KEY
+  //   npx wrangler secret put CLERK_PUBLISHABLE_KEY
+  //   npx wrangler secret put SUPER_ADMIN_EMAIL
+
+  // A shared business profile (so every staff phone sees leadership's edits)
+  // needs a D1 database bound as DB. See the deployment notes in README.md.
+  // "d1_databases": [
+  //   { "binding": "DB", "database_name": "cantmakemyshift", "database_id": "<from: wrangler d1 create>" }
+  // ]
+}

@@ -7,6 +7,32 @@ A mobile-first instruction tool that guides employees through their employer’s
 - the workflows themselves: add, remove, reorder, and rename them
 - each workflow’s steps: add, remove, reorder, and edit text, plus an optional note and an action button per step (call the main line, open the scheduling platform, or none)
 
+## Deploying
+
+This app compiles to a **Cloudflare Worker** (`dist/server/index.js`), not a Node server, so it belongs on Cloudflare rather than a container host. `wrangler.jsonc` is committed and validated (`npx wrangler deploy --dry-run`).
+
+```bash
+npx wrangler login                              # once, interactive
+npx wrangler secret put CLERK_PUBLISHABLE_KEY   # same Clerk app as Performance Pulse
+npx wrangler secret put CLERK_SECRET_KEY
+npx wrangler secret put SUPER_ADMIN_EMAIL
+npm run build && npx wrangler deploy
+```
+
+Secrets live in Cloudflare, never in the repo. Until all three are set the business profile screen shows a configuration notice; the employee flow is unaffected.
+
+A custom domain (say `shifts.example.com`) is worth setting before printing the QR sign, since the QR encodes whatever address the app is opened on.
+
+### Sharing one profile across devices
+
+The profile currently lives in each browser's local storage, so leadership's edits do not reach staff phones. To make one profile authoritative, create a database and bind it as `DB` in `wrangler.jsonc`:
+
+```bash
+npx wrangler d1 create cantmakemyshift
+```
+
+Then the editor's Save writes through the same Clerk check that guards the editor, and every device reads from it.
+
 ## Getting staff to the app
 
 Staff never sign in — they open a link. Three things make that easy:
@@ -42,7 +68,7 @@ npm run dev
 npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+Deployment config lives in `wrangler.jsonc` (see Deploying below).
 
 ## Included Shape
 
