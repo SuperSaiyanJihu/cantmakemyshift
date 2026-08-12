@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import SaveProfile from "./SaveProfile";
 import SettingsEditor from "./SettingsEditor";
 import StaffAccess from "./StaffAccess";
 import { registerServiceWorker } from "./register-sw";
@@ -10,6 +11,7 @@ import {
   Settings,
   cloneSettings,
   defaults,
+  normalizeSettings,
   parseStoredSettings,
   profileFileFor,
   settingsFromProfileFile,
@@ -43,7 +45,7 @@ export default function Home() {
   // Remounts the editor whenever the draft is replaced from outside the form
   // (initial load, import, restore, discard) so its field-local state resets.
   const [draftVersion, setDraftVersion] = useState(0);
-  const [saved, setSaved] = useState(false);
+
 
   // Lets staff keep the app on their home screen. Never blocks rendering.
   useEffect(() => {
@@ -51,15 +53,45 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    // Paint from the browser's cached copy first so the screen is never empty,
+    // then let the shared profile from the server replace it. Employees are
+    // often on poor signal, and stale-but-instant beats blank-but-correct.
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) return;
-    const parsed = parseStoredSettings(stored);
-    if (!parsed) return;
-    // Stored profiles can only be read after hydration; a lazy initializer would mismatch the server-rendered defaults.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSettings(parsed);
-    setDraft(cloneSettings(parsed));
-    setDraftVersion((version) => version + 1);
+    const parsed = stored ? parseStoredSettings(stored) : null;
+    if (parsed) {
+      // Stored profiles can only be read after hydration; a lazy initializer would mismatch the server-rendered defaults.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSettings(parsed);
+      setDraft(cloneSettings(parsed));
+      setDraftVersion((version) => version + 1);
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/api/profile");
+        if (!response.ok) return;
+        const data = (await response.json()) as { settings: Settings | null };
+        if (cancelled || !data.settings) return;
+
+        const shared = normalizeSettings(data.settings);
+        setSettings(shared);
+        setDraft(cloneSettings(shared));
+        setDraftVersion((version) => version + 1);
+        // Cache it so the next visit paints instantly, and so the directions
+        // survive a spell with no connection.
+        try {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(shared));
+        } catch {
+          // A full or blocked store only costs us the cache.
+        }
+      } catch {
+        // Offline or the server is unreachable: the cached copy stands.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -109,20 +141,18 @@ export default function Home() {
     setRoute(flow?.showEmergencyInfo ? "emergency-info" : "reason");
   }
 
+  /** Caches the profile in this browser so it paints instantly and survives offline. */
   function persist(next: Settings) {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
       window.alert("Your changes are applied for this visit, but the browser refused to store them (storage may be full or blocked). They will not survive a reload.");
-      return;
     }
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 2200);
   }
 
-  function saveSettings() {
-    setSettings(draft);
-    persist(draft);
+  function saveSettings(next: Settings = draft) {
+    setSettings(next);
+    persist(next);
   }
 
   function discardDraft() {
@@ -281,7 +311,7 @@ export default function Home() {
             <p className="subtle">Every screen, workflow, and step below is editable. Save to apply your changes on this device, or export the profile to reuse the same directions elsewhere—no employee accounts required.</p>
             <div className="profile-summary"><span className="brand-mark" aria-hidden="true">{draft.organization.charAt(0) || "B"}</span><span><strong>{draft.organization || "New business"}</strong><small>Editing this profile — save to apply</small></span></div>
             <SettingsEditor key={draftVersion} draft={draft} onChange={setDraft} />
-            <button className="primary" onClick={saveSettings}>{saved ? "Saved ✓" : "Save settings"}</button>
+            <SaveProfile draft={draft} onSavedLocally={saveSettings} />
             <button className="secondary" onClick={discardDraft}>Discard unsaved changes</button>
             <div className="profile-actions">
               <button className="secondary" onClick={exportProfile}>Export business profile</button>

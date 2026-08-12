@@ -7,31 +7,32 @@ A mobile-first instruction tool that guides employees through their employer’s
 - the workflows themselves: add, remove, reorder, and rename them
 - each workflow’s steps: add, remove, reorder, and edit text, plus an optional note and an action button per step (call the main line, open the scheduling platform, or none)
 
-## Deploying
+## Deploying (Railway)
 
-This app compiles to a **Cloudflare Worker** (`dist/server/index.js`), not a Node server, so it belongs on Cloudflare rather than a container host. `wrangler.jsonc` is committed and validated (`npx wrangler deploy --dry-run`).
+A stock Next.js app — Railway detects it automatically, no Dockerfile needed.
 
-```bash
-npx wrangler login                              # once, interactive
-npx wrangler secret put CLERK_PUBLISHABLE_KEY   # same Clerk app as Performance Pulse
-npx wrangler secret put CLERK_SECRET_KEY
-npx wrangler secret put SUPER_ADMIN_EMAIL
-npm run build && npx wrangler deploy
-```
+1. **Create the service** from this repo and branch.
+2. **Add a Postgres database** to the project. Railway injects `DATABASE_URL`; reference it on the service.
+3. **Set the variables** (Settings → Variables), all on the same Clerk application as Performance Pulse:
 
-Secrets live in Cloudflare, never in the repo. Until all three are set the business profile screen shows a configuration notice; the employee flow is unaffected.
+   | Variable | Purpose |
+   | --- | --- |
+   | `DATABASE_URL` | Shared business profile. Without it each browser keeps its own copy. |
+   | `CLERK_PUBLISHABLE_KEY` | Public browser key, served at request time by `/api/auth/clerk/config`. |
+   | `CLERK_SECRET_KEY` | Verifies session tokens server-side. Never reaches the browser. |
+   | `SUPER_ADMIN_EMAIL` | Who may edit the profile. One address, or several separated by commas. |
 
-A custom domain (say `shifts.example.com`) is worth setting before printing the QR sign, since the QR encodes whatever address the app is opened on.
+4. **Create the table** once, against that database:
 
-### Sharing one profile across devices
+   ```bash
+   DATABASE_URL='...' npm run db:migrate
+   ```
 
-The profile currently lives in each browser's local storage, so leadership's edits do not reach staff phones. To make one profile authoritative, create a database and bind it as `DB` in `wrangler.jsonc`:
+5. **Deploy.** Railway runs `npm run build` then `npm start`; Next binds to `$PORT` on its own.
 
-```bash
-npx wrangler d1 create cantmakemyshift
-```
+Set a custom domain before printing the QR sign — the QR encodes whichever address the app is opened on.
 
-Then the editor's Save writes through the same Clerk check that guards the editor, and every device reads from it.
+Nothing is required for the employee flow: with no variables set at all, the app still serves call-out directions from each browser's stored copy, and the business profile screen explains what to configure.
 
 ## Getting staff to the app
 
@@ -52,9 +53,19 @@ The business profile editor is gated behind the Clerk application shared with Pe
 - Configure `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `SUPER_ADMIN_EMAIL` (see `.env.example`). It fails closed: with any of them missing, the editor is unreachable and the screen explains which variables to set.
 - Clerk is code-split into its own chunk, so an employee calling out never downloads it.
 
-Because the profile itself still lives in browser storage, the gate controls the editor rather than the data — someone who edits their own browser storage directly can still change their own copy. Moving the profile into D1 behind the same check is the next step if that matters.
+## How the profile is stored
 
-The prototype keeps one active business profile in browser storage. Leadership can edit, export, and import profiles without employee accounts or a multi-tenant backend. Profiles exported by the previous version (v1) are migrated automatically on import or first load. A later hosted version can persist the same profile shape in a database and add administrator authentication without changing the employee flow.
+One row in Postgres (`business_profiles`), read by every device and written only by leadership.
+
+- **Reads are public and unauthenticated** — these are the directions employees are told to follow, and staff never sign in.
+- **Writes go through the same Clerk check that guards the editor**, re-verified server-side. The editor's gate decides what to *render*; the endpoint decides what can be *written*.
+- **Every browser keeps a cached copy** in local storage. The screen paints from the cache instantly, then the shared profile replaces it. If the network or the database is unavailable, the cached directions still show rather than an error.
+- **Saving says which happened**: "Saved for everyone" only when the server confirmed it, and a distinct message when it could only be stored on that device.
+- Payloads are normalized on write and on read, so a malformed or hostile profile cannot reach an employee's screen.
+
+The row is keyed by a slug with exactly one row (`default`) today. Supporting a second organization later is a lookup change, not a migration.
+
+Profiles exported by earlier versions are migrated automatically on import or first load.
 
 ## Prerequisites
 
@@ -68,83 +79,23 @@ npm run dev
 npm run build
 ```
 
-Deployment config lives in `wrangler.jsonc` (see Deploying below).
+## Project layout
 
-## Included Shape
+- `app/` — screens and API routes. `page.tsx` is the whole employee experience; `AdminGate.tsx` gates leadership settings; `api/profile` is the shared profile; `api/auth/clerk` is the sign-in exchange.
+- `app/settings.ts` — the profile shape, defaults, normalization, and migration of older profiles.
+- `app/superadmin.ts` / `app/auth-server.ts` — who may edit, and the server-side Clerk verification behind it.
+- `db/` — Drizzle schema and connection. `drizzle/` holds generated migrations.
+- `public/` — icons, web app manifest, and the service worker that makes the app installable.
+- `tests/` — run with `npm test`; no server or database required.
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+## Useful commands
 
-## Workspace Auth Headers
+- `npm run dev` — local development on http://localhost:3000
+- `npm run build` — production build
+- `npm start` — serve the production build
+- `npm test` — unit tests plus the profile endpoint's authorization guards
+- `npm run lint` — ESLint over `app/`, `db/`, and `tests/`
+- `npm run db:generate` — regenerate migrations after editing `db/schema.ts`
+- `npm run db:migrate` — apply migrations to `DATABASE_URL`
 
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
-```
-
-## Optional Dispatch-Owned ChatGPT Sign-In
-
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
-
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+Local configuration goes in `.env.local` (gitignored). See `.env.example`.

@@ -1,4 +1,4 @@
-import { normalizePublishableKey, parseSuperAdminEmails } from "../../../../superadmin";
+import { normalizePublishableKey, parseSuperAdminEmails } from "../../../../superadmin.ts";
 
 export const dynamic = "force-dynamic";
 

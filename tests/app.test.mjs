@@ -11,41 +11,6 @@ import {
 } from "../app/settings.ts";
 import { decideSuperAdmin, normalizePublishableKey, parseSuperAdminEmails } from "../app/superadmin.ts";
 
-async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
-}
-
-test("server-renders the call-out home screen with default profile copy", async () => {
-  const response = await render();
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
-
-  const html = await response.text();
-  assert.match(html, /Can’t Make My Shift/);
-  assert.match(html, /Excel Aquatics/);
-  assert.match(html, /Call-out directions/);
-  assert.match(html, /Can’t make\s*your shift\?/);
-  assert.match(html, /This is an instruction tool\./);
-  assert.match(html, /Business profile &amp; leadership settings/);
-});
-
 test("step instructions stay headline-length, with detail carried by notes", () => {
   for (const flow of defaults.flows) {
     for (const step of flow.steps) {

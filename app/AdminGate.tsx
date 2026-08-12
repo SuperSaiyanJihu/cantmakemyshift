@@ -1,7 +1,23 @@
 "use client";
 
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { ClerkProvider, SignIn, useAuth, useClerk } from "@clerk/clerk-react";
+
+export type AdminSession = {
+  email: string;
+  /** Performs a request carrying the signed-in leader's Clerk token. */
+  authedFetch: (input: string, init?: RequestInit) => Promise<Response>;
+};
+
+/**
+ * Available to anything rendered inside the gate, so the editor can write to
+ * leadership-only endpoints without the page above needing Clerk context.
+ */
+export const AdminSessionContext = createContext<AdminSession | null>(null);
+
+export function useAdminSession() {
+  return useContext(AdminSessionContext);
+}
 
 type GateConfig = { publishableKey: string | null; ready: boolean; missing: string[] };
 
@@ -98,6 +114,20 @@ function ClerkBridge({ children }: { children: ReactNode }) {
     void check();
   }, [check]);
 
+  const session = useMemo<AdminSession>(
+    () => ({
+      email,
+      authedFetch: async (input, init) => {
+        const token = await getToken();
+        return fetch(input, {
+          ...init,
+          headers: { ...(init?.headers ?? {}), Authorization: `Bearer ${token ?? ""}` },
+        });
+      },
+    }),
+    [email, getToken],
+  );
+
   if (state === "checking") return <p className="subtle gate-status">Checking your access…</p>;
 
   if (state === "unavailable") {
@@ -125,7 +155,7 @@ function ClerkBridge({ children }: { children: ReactNode }) {
   }
 
   return (
-    <>
+    <AdminSessionContext.Provider value={session}>
       <div className="admin-bar">
         <span>
           <strong>Signed in as leadership</strong>
@@ -134,7 +164,7 @@ function ClerkBridge({ children }: { children: ReactNode }) {
         <button className="mini-button" onClick={() => signOut()}>Sign out</button>
       </div>
       {children}
-    </>
+    </AdminSessionContext.Provider>
   );
 }
 
