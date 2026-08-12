@@ -39,9 +39,13 @@ export async function POST(request: Request) {
     if (!clerkUserId) throw new Error("Clerk token missing subject");
 
     const user = await createClerkClient({ secretKey }).users.getUser(clerkUserId);
-    const primary =
-      user.emailAddresses.find((address) => address.id === user.primaryEmailAddressId) ?? user.emailAddresses[0];
-    email = primary?.emailAddress;
+    // Only the account's own primary address counts, and only once Clerk has
+    // verified it. Anyone can attach an arbitrary unverified address to a Clerk
+    // account, so trusting an unverified one — or falling back to whatever
+    // address happens to be first — would let any account on the shared staff
+    // instance claim a leadership address and walk in.
+    const primary = user.emailAddresses.find((address) => address.id === user.primaryEmailAddressId);
+    email = primary?.verification?.status === "verified" ? primary.emailAddress : undefined;
   } catch {
     // Never echo the verification error: it distinguishes an expired token from
     // a forged one, which only helps someone probing the endpoint.

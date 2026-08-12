@@ -11,7 +11,13 @@ export const dynamic = "force-dynamic";
  * readiness booleans are exposed here — never the secret key or the allowlist.
  */
 export function GET() {
-  const publishableKey = normalizePublishableKey(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+  // CLERK_PUBLISHABLE_KEY is read first because it is a genuine runtime lookup.
+  // A NEXT_PUBLIC_* name is inlined into the bundle at build time by the
+  // framework, which would defeat the point of serving it per request; it stays
+  // supported only as a fallback for deployments already configured that way.
+  const publishableKey =
+    normalizePublishableKey(process.env.CLERK_PUBLISHABLE_KEY) ??
+    normalizePublishableKey(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
   const hasSecretKey = !!process.env.CLERK_SECRET_KEY?.trim();
   const hasSuperAdmin = parseSuperAdminEmails(process.env.SUPER_ADMIN_EMAIL).length > 0;
 
@@ -20,7 +26,7 @@ export function GET() {
       publishableKey: publishableKey ?? null,
       ready: !!publishableKey && hasSecretKey && hasSuperAdmin,
       missing: [
-        ...(publishableKey ? [] : ["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"]),
+        ...(publishableKey ? [] : ["CLERK_PUBLISHABLE_KEY"]),
         ...(hasSecretKey ? [] : ["CLERK_SECRET_KEY"]),
         ...(hasSuperAdmin ? [] : ["SUPER_ADMIN_EMAIL"]),
       ],

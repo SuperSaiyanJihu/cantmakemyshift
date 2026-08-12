@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import AdminGate from "./AdminGate";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import SettingsEditor from "./SettingsEditor";
+import StaffAccess from "./StaffAccess";
+import { registerServiceWorker } from "./register-sw";
 import {
   Flow,
   STORAGE_KEY,
@@ -15,6 +16,12 @@ import {
 } from "./settings";
 
 type Route = "home" | "reason" | "emergency-info" | "workflow" | "complete" | "settings";
+
+// Clerk and the editor are leadership-only, so they are fetched on demand. An
+// employee calling out never downloads any of it.
+const AdminGate = lazy(() => import("./AdminGate"));
+const StaffPoster = lazy(() => import("./StaffPoster"));
+const LEADERSHIP_RETURN_PARAM = "leadership";
 
 // Renders an instruction template, substituting {phone} (bolded) and {platform}.
 function renderInstruction(template: string, phone: string, platformName: string) {
@@ -38,6 +45,11 @@ export default function Home() {
   const [draftVersion, setDraftVersion] = useState(0);
   const [saved, setSaved] = useState(false);
 
+  // Lets staff keep the app on their home screen. Never blocks rendering.
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
+
   useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     if (!stored) return;
@@ -53,6 +65,18 @@ export default function Home() {
   useEffect(() => {
     document.title = settings.organization ? `Can’t Make My Shift | ${settings.organization}` : "Can’t Make My Shift";
   }, [settings.organization]);
+
+  // Clerk returns here after a successful sign-in. Reopen the settings screen
+  // so leadership lands where they were going, then drop the marker so a
+  // refresh or a shared link does not reopen it.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(LEADERSHIP_RETURN_PARAM)) return;
+    url.searchParams.delete(LEADERSHIP_RETURN_PARAM);
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRoute("settings");
+  }, []);
 
   const flow = useMemo(() => settings.flows.find((item) => item.id === flowId) ?? null, [settings, flowId]);
   const steps = flow?.steps ?? [];
@@ -167,6 +191,7 @@ export default function Home() {
               <strong>{settings.boundaryTitle}</strong>
               <span>{settings.boundaryBody}</span>
             </div>
+            <StaffAccess />
             <button className="settings-link" onClick={() => setRoute("settings")}>Business profile & leadership settings</button>
           </section>
         )}
@@ -250,6 +275,7 @@ export default function Home() {
           <section className="screen settings-screen">
             <button className="back-link" onClick={goBack}>← Employee view</button>
             <p className="step-label">Business profile</p>
+            <Suspense fallback={<p className="subtle gate-status">Loading leadership sign-in…</p>}>
             <AdminGate>
             <h1>Make the directions yours.</h1>
             <p className="subtle">Every screen, workflow, and step below is editable. Save to apply your changes on this device, or export the profile to reuse the same directions elsewhere—no employee accounts required.</p>
@@ -262,7 +288,9 @@ export default function Home() {
               <label className="secondary import-button">Import business profile<input type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; importProfile(file); }} /></label>
             </div>
             <button className="secondary" onClick={restoreDefaults}>Restore Excel Aquatics defaults</button>
+            <StaffPoster organization={settings.organization} />
             </AdminGate>
+            </Suspense>
           </section>
         )}
       </div>

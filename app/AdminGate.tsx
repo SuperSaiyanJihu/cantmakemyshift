@@ -1,10 +1,20 @@
 "use client";
 
-import { ReactNode, useEffect, useRef, useState } from "react";
-import { ClerkLoaded, ClerkLoading, ClerkProvider, SignIn, SignedIn, SignedOut, useAuth, useClerk } from "@clerk/clerk-react";
+import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ClerkProvider, SignIn, useAuth, useClerk } from "@clerk/clerk-react";
+
+type GateConfig = { publishableKey: string | null; ready: boolean; missing: string[] };
 
 /** How long Clerk's script may take before we tell the user it is not arriving. */
 const CLERK_LOAD_TIMEOUT_MS = 10_000;
+
+/**
+ * Where Clerk sends the browser after a successful sign-in. The app keeps its
+ * screen in React state rather than the URL, so without this marker a sign-in
+ * would land the admin back on the employee home screen with no sign that
+ * anything worked.
+ */
+export const LEADERSHIP_RETURN_PARAM = "leadership";
 
 function SignInIntro() {
   return (
@@ -18,8 +28,6 @@ function SignInIntro() {
   );
 }
 
-type GateConfig = { publishableKey: string | null; ready: boolean; missing: string[] };
-
 function ConfigNotice({ missing }: { missing: string[] }) {
   return (
     <div className="notice gate-notice">
@@ -32,52 +40,77 @@ function ConfigNotice({ missing }: { missing: string[] }) {
   );
 }
 
+type CheckState = "checking" | "allowed" | "denied" | "unavailable";
+
 /**
  * Trades the Clerk session token for the server's super-admin decision.
  *
  * The browser never decides this: it asks `/api/auth/clerk`, which verifies the
- * token against Clerk and checks the allowlist server-side.
+ * token against Clerk and checks the allowlist server-side. A refusal and a
+ * failure to ask are kept apart, because telling someone they are unauthorized
+ * when the network merely blipped sends them hunting for the wrong problem.
  */
 function ClerkBridge({ children }: { children: ReactNode }) {
-  const { isSignedIn, getToken } = useAuth();
+  const { getToken } = useAuth();
   const { signOut } = useClerk();
-  const [state, setState] = useState<"checking" | "allowed" | "denied">("checking");
+  const [state, setState] = useState<CheckState>("checking");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
-  const attempted = useRef(false);
 
-  useEffect(() => {
-    if (!isSignedIn || attempted.current) return;
-    attempted.current = true;
+  const check = useCallback(async () => {
+    // Re-entrant: the effect runs it once on mount, and "Try again" runs it
+    // afterwards, which is why the state resets here rather than at the call site.
+    setState("checking");
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("no-token");
 
-    (async () => {
-      try {
-        const token = await getToken();
-        if (!token) throw new Error("Sign in again to continue.");
+      const response = await fetch("/api/auth/clerk", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        allowed?: boolean;
+        email?: string;
+        message?: string;
+      };
 
-        const response = await fetch("/api/auth/clerk", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = (await response.json().catch(() => ({}))) as {
-          allowed?: boolean;
-          email?: string;
-          message?: string;
-        };
-
-        if (!response.ok || !data.allowed) {
-          throw new Error(data.message || "This account is not authorized to edit the business profile.");
-        }
+      if (response.ok && data.allowed) {
         setEmail(data.email ?? "");
         setState("allowed");
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Sign-in could not be completed.");
-        setState("denied");
+        return;
       }
-    })();
-  }, [isSignedIn, getToken]);
+
+      // 401/403 are answers: this account may not edit the profile. Anything
+      // else means we never got an answer and retrying is worthwhile.
+      setMessage(data.message || "This account is not authorized to edit the business profile.");
+      setState(response.status === 401 || response.status === 403 ? "denied" : "unavailable");
+    } catch {
+      setMessage("We could not reach the sign-in service to check your access.");
+      setState("unavailable");
+    }
+  }, [getToken]);
+
+  useEffect(() => {
+    // Asking the server whether this account is authorized is the whole point
+    // of mounting; there is nothing to render until the answer arrives.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void check();
+  }, [check]);
 
   if (state === "checking") return <p className="subtle gate-status">Checking your access…</p>;
+
+  if (state === "unavailable") {
+    return (
+      <div className="gate-panel">
+        <div className="notice gate-notice">
+          <strong>Your access could not be checked.</strong>
+          <span>{message}</span>
+        </div>
+        <button className="secondary" onClick={() => void check()}>Try again</button>
+      </div>
+    );
+  }
 
   if (state === "denied") {
     return (
@@ -106,20 +139,60 @@ function ClerkBridge({ children }: { children: ReactNode }) {
 }
 
 /**
+ * Decides what to show once Clerk is in play.
+ *
+ * `useAuth().isLoaded` is the single source of truth for whether Clerk arrived.
+ * Clerk's own <ClerkLoading>/<ClerkLoaded> pair cannot express "it failed" —
+ * both render nothing when loading ends without success, which would leave this
+ * screen silently blank exactly when something is wrong.
+ */
+function GateBody({ children, slowToLoad }: { children: ReactNode; slowToLoad: boolean }) {
+  const { isLoaded, isSignedIn } = useAuth();
+
+  if (!isLoaded) {
+    return (
+      <div className="gate-panel">
+        <SignInIntro />
+        {slowToLoad ? (
+          <div className="notice gate-notice">
+            <strong>The sign-in form is not loading.</strong>
+            <span>
+              Check your connection and reload. If it keeps failing, the Clerk publishable key for this deployment may
+              point at the wrong instance.
+            </span>
+          </div>
+        ) : (
+          <p className="subtle">Loading the secure sign-in form…</p>
+        )}
+      </div>
+    );
+  }
+
+  if (!isSignedIn) {
+    const returnUrl = `/?${LEADERSHIP_RETURN_PARAM}=1`;
+    return (
+      <div className="gate-panel">
+        <SignInIntro />
+        <div className="clerk-mount">
+          <SignIn routing="hash" forceRedirectUrl={returnUrl} fallbackRedirectUrl={returnUrl} />
+        </div>
+      </div>
+    );
+  }
+
+  return <ClerkBridge>{children}</ClerkBridge>;
+}
+
+/**
  * Gates the business profile editor behind the shared staff Clerk sign-in.
  *
- * Clerk only loads when someone opens this screen, so the employee call-out
- * flow stays anonymous and carries none of the auth weight.
+ * Loaded lazily by the page, so the employee call-out flow never downloads any
+ * of this and stays anonymous.
  */
 export default function AdminGate({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<GateConfig | null>(null);
   const [failed, setFailed] = useState(false);
   const [slowToLoad, setSlowToLoad] = useState(false);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSlowToLoad(true), CLERK_LOAD_TIMEOUT_MS);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,6 +211,14 @@ export default function AdminGate({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Timed from when Clerk is actually asked for, not from mount, so a slow
+  // config fetch cannot burn the allowance before Clerk has begun loading.
+  useEffect(() => {
+    if (!config?.publishableKey) return;
+    const timer = window.setTimeout(() => setSlowToLoad(true), CLERK_LOAD_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [config?.publishableKey]);
+
   if (failed) {
     return (
       <div className="notice gate-notice">
@@ -152,37 +233,7 @@ export default function AdminGate({ children }: { children: ReactNode }) {
 
   return (
     <ClerkProvider publishableKey={config.publishableKey} afterSignOutUrl="/">
-      {/* Clerk's components render nothing until its script loads, so without
-          this the screen would sit blank whenever that script cannot arrive. */}
-      <ClerkLoading>
-        <div className="gate-panel">
-          <SignInIntro />
-          {slowToLoad ? (
-            <div className="notice gate-notice">
-              <strong>The sign-in form is not loading.</strong>
-              <span>
-                Check your connection and reload. If it keeps failing, the Clerk publishable key for this deployment may
-                point at the wrong instance.
-              </span>
-            </div>
-          ) : (
-            <p className="subtle">Loading the secure sign-in form…</p>
-          )}
-        </div>
-      </ClerkLoading>
-      <ClerkLoaded>
-        <SignedOut>
-          <div className="gate-panel">
-            <SignInIntro />
-            <div className="clerk-mount">
-              <SignIn routing="hash" />
-            </div>
-          </div>
-        </SignedOut>
-        <SignedIn>
-          <ClerkBridge>{children}</ClerkBridge>
-        </SignedIn>
-      </ClerkLoaded>
+      <GateBody slowToLoad={slowToLoad}>{children}</GateBody>
     </ClerkProvider>
   );
 }

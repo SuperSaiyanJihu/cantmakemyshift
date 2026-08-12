@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
@@ -14,10 +14,25 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Can’t Make My Shift | Excel Aquatics",
     description: "Clear, step-by-step call-out directions for Excel Aquatics employees.",
+    // Lets staff keep the app on their home screen instead of hunting for a link.
+    manifest: "/manifest.webmanifest",
+    applicationName: "Can’t Make My Shift",
+    appleWebApp: { capable: true, title: "My Shift", statusBarStyle: "default" },
+    icons: {
+      icon: [
+        { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+        { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      ],
+      apple: "/apple-touch-icon.png",
+    },
     openGraph: { title: "Can’t Make My Shift", description: "Clear call-out directions. Two quick steps.", images: [image] },
     twitter: { card: "summary_large_image", title: "Can’t Make My Shift", description: "Clear call-out directions. Two quick steps.", images: [image] },
   };
 }
+
+export const viewport: Viewport = {
+  themeColor: "#0d493f",
+};
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="en"><body className={geist.variable}>{children}</body></html>;

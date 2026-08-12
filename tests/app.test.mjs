@@ -256,3 +256,37 @@ test("publishable keys are validated by shape, not length", () => {
     assert.equal(normalizePublishableKey(bad), undefined, `expected ${String(bad)} to be rejected`);
   }
 });
+
+test("the staff QR encodes modules in scannable orientation", async () => {
+  const { qrPath } = await import("../app/qr.ts");
+  const qrcode = (await import("qrcode-generator")).default;
+
+  const url = "https://cantmakemyshift.example.com";
+  const { path, moduleCount } = qrPath(url);
+
+  // Rebuild the expected coordinate set independently: x is the column, y is
+  // the row. A transposed path still renders a plausible-looking QR that no
+  // phone can read, so orientation is asserted rather than eyeballed.
+  const reference = qrcode(0, "M");
+  reference.addData(url);
+  reference.make();
+  assert.equal(reference.getModuleCount(), moduleCount);
+
+  const drawn = new Set(path.match(/M\d+ \d+/g));
+  let expected = 0;
+  for (let row = 0; row < moduleCount; row++) {
+    for (let column = 0; column < moduleCount; column++) {
+      if (!reference.isDark(row, column)) continue;
+      expected += 1;
+      assert.ok(drawn.has(`M${column} ${row}`), `missing dark module at row ${row}, column ${column}`);
+    }
+  }
+  assert.equal(drawn.size, expected);
+
+  // The top-left finder pattern is a solid 7x7 square; its presence in the
+  // right corner proves the grid was not flipped.
+  for (let i = 0; i < 7; i++) {
+    assert.ok(drawn.has(`M${i} 0`), `finder pattern break at column ${i}`);
+    assert.ok(drawn.has(`M0 ${i}`), `finder pattern break at row ${i}`);
+  }
+});

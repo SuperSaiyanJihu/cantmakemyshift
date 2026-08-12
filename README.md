@@ -7,13 +7,24 @@ A mobile-first instruction tool that guides employees through their employer’s
 - the workflows themselves: add, remove, reorder, and rename them
 - each workflow’s steps: add, remove, reorder, and edit text, plus an optional note and an action button per step (call the main line, open the scheduling platform, or none)
 
+## Getting staff to the app
+
+Staff never sign in — they open a link. Three things make that easy:
+
+- **Home-screen install.** A web app manifest, icons, and a no-op service worker make the app installable, so staff can keep it one tap away instead of hunting for a link mid-crisis. The home screen offers "Keep this app on your phone", which triggers the native install prompt where available and explains the Share → Add to Home Screen steps on iOS.
+- **Share the link.** The same panel uses the native share sheet, falling back to copying the link.
+- **A printable sign.** Leadership settings include a QR code of the deployed address with a print stylesheet, for the staff room or pool office. The QR encodes whichever address the app was opened on, so it is correct for any deployment.
+
+The service worker deliberately caches nothing: call-out directions must never be served stale.
+
 ## Leadership sign-in
 
 The business profile editor is gated behind the Clerk application shared with Performance Pulse, so the same work account opens both. The employee call-out flow stays anonymous and loads no auth code at all — Clerk is only fetched when someone opens the settings screen.
 
-- The browser asks `GET /api/auth/clerk/config` for the publishable key at request time, so one build can be deployed against different Clerk instances.
-- After signing in, the browser exchanges its Clerk session token at `POST /api/auth/clerk`. The server verifies the token with `@clerk/backend` and checks the address against `SUPER_ADMIN_EMAIL`. The allowlist and secret key never reach the browser.
-- Configure `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `SUPER_ADMIN_EMAIL` (see `.env.example`). It fails closed: with any of them missing, the editor is unreachable and the screen explains which variables to set.
+- The browser asks `GET /api/auth/clerk/config` for the publishable key at request time, so one build can be deployed against different Clerk instances. The variable is `CLERK_PUBLISHABLE_KEY` rather than `NEXT_PUBLIC_*` precisely because the framework inlines `NEXT_PUBLIC_*` at build time.
+- After signing in, the browser exchanges its Clerk session token at `POST /api/auth/clerk`. The server verifies the token with `@clerk/backend`, takes the account's **primary** email and only when Clerk reports it **verified**, then checks it against `SUPER_ADMIN_EMAIL`. Anyone can attach an unverified address to a Clerk account, so an unverified match is refused. The allowlist and secret key never reach the browser.
+- Configure `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `SUPER_ADMIN_EMAIL` (see `.env.example`). It fails closed: with any of them missing, the editor is unreachable and the screen explains which variables to set.
+- Clerk is code-split into its own chunk, so an employee calling out never downloads it.
 
 Because the profile itself still lives in browser storage, the gate controls the editor rather than the data — someone who edits their own browser storage directly can still change their own copy. Moving the profile into D1 behind the same check is the next step if that matters.
 
