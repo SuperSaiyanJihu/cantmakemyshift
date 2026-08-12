@@ -1,5 +1,13 @@
 {
   "version": "7",
-  "dialect": "sqlite",
-  "entries": []
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1786573098572,
+      "tag": "0000_tan_next_avengers",
+      "breakpoints": true
+    }
+  ]
 }
