@@ -7,6 +7,16 @@ A mobile-first instruction tool that guides employees through their employer’s
 - the workflows themselves: add, remove, reorder, and rename them
 - each workflow’s steps: add, remove, reorder, and edit text, plus an optional note and an action button per step (call the main line, open the scheduling platform, or none)
 
+## Leadership sign-in
+
+The business profile editor is gated behind the Clerk application shared with Performance Pulse, so the same work account opens both. The employee call-out flow stays anonymous and loads no auth code at all — Clerk is only fetched when someone opens the settings screen.
+
+- The browser asks `GET /api/auth/clerk/config` for the publishable key at request time, so one build can be deployed against different Clerk instances.
+- After signing in, the browser exchanges its Clerk session token at `POST /api/auth/clerk`. The server verifies the token with `@clerk/backend` and checks the address against `SUPER_ADMIN_EMAIL`. The allowlist and secret key never reach the browser.
+- Configure `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `SUPER_ADMIN_EMAIL` (see `.env.example`). It fails closed: with any of them missing, the editor is unreachable and the screen explains which variables to set.
+
+Because the profile itself still lives in browser storage, the gate controls the editor rather than the data — someone who edits their own browser storage directly can still change their own copy. Moving the profile into D1 behind the same check is the next step if that matters.
+
 The prototype keeps one active business profile in browser storage. Leadership can edit, export, and import profiles without employee accounts or a multi-tenant backend. Profiles exported by the previous version (v1) are migrated automatically on import or first load. A later hosted version can persist the same profile shape in a database and add administrator authentication without changing the employee flow.
 
 ## Prerequisites

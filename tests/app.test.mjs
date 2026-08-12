@@ -9,6 +9,7 @@ import {
   profileFileFor,
   settingsFromProfileFile,
 } from "../app/settings.ts";
+import { decideSuperAdmin, normalizePublishableKey, parseSuperAdminEmails } from "../app/superadmin.ts";
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -210,4 +211,48 @@ test("profile files round-trip and v1 exports still import", () => {
 
   assert.throws(() => settingsFromProfileFile(JSON.stringify({ type: "something-else", settings: {} })));
   assert.throws(() => settingsFromProfileFile("not json"));
+});
+
+test("super-admin access fails closed when no allowlist is configured", () => {
+  for (const setting of [undefined, null, "", "   ", ",,", 42]) {
+    const decision = decideSuperAdmin("kevin@goswimexcel.com", setting);
+    assert.equal(decision.allowed, false);
+    assert.equal(decision.reason, "not_configured");
+  }
+});
+
+test("super-admin match ignores case and surrounding whitespace", () => {
+  const setting = "  Kevin@GoSwimExcel.com  ";
+  assert.deepEqual(decideSuperAdmin("kevin@goswimexcel.com", setting), {
+    allowed: true,
+    email: "kevin@goswimexcel.com",
+  });
+  assert.deepEqual(decideSuperAdmin("  KEVIN@goswimexcel.COM ", setting), {
+    allowed: true,
+    email: "kevin@goswimexcel.com",
+  });
+});
+
+test("super-admin rejects any account outside the allowlist", () => {
+  const setting = "kevin@goswimexcel.com";
+  for (const email of ["someone@goswimexcel.com", "kevin@example.com", "", null, undefined, "kevin@goswimexcel.com.evil.com"]) {
+    const decision = decideSuperAdmin(email, setting);
+    assert.equal(decision.allowed, false, `expected ${String(email)} to be rejected`);
+    assert.equal(decision.reason, "not_authorized");
+  }
+});
+
+test("SUPER_ADMIN_EMAIL accepts a comma-separated list", () => {
+  const setting = "kevin@goswimexcel.com, ops@goswimexcel.com";
+  assert.deepEqual(parseSuperAdminEmails(setting), ["kevin@goswimexcel.com", "ops@goswimexcel.com"]);
+  assert.equal(decideSuperAdmin("ops@goswimexcel.com", setting).allowed, true);
+  assert.equal(decideSuperAdmin("other@goswimexcel.com", setting).allowed, false);
+});
+
+test("publishable keys are validated by shape, not length", () => {
+  assert.equal(normalizePublishableKey("  pk_live_Y2xlcmsuZXhhbXBsZS5jb20k  "), "pk_live_Y2xlcmsuZXhhbXBsZS5jb20k");
+  assert.equal(normalizePublishableKey("pk_test_Y2xlcmsuZXhhbXBsZS5jb20k"), "pk_test_Y2xlcmsuZXhhbXBsZS5jb20k");
+  for (const bad of ["", "   ", "pk_live_", "sk_live_Y2xlcmsuZXhhbXBsZQ", "not-a-key", undefined, null, 7]) {
+    assert.equal(normalizePublishableKey(bad), undefined, `expected ${String(bad)} to be rejected`);
+  }
 });
