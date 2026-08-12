@@ -22,13 +22,9 @@ A stock Next.js app — Railway detects it automatically, no Dockerfile needed.
    | `CLERK_SECRET_KEY` | Verifies session tokens server-side. Never reaches the browser. |
    | `SUPER_ADMIN_EMAIL` | Who may edit the profile. One address, or several separated by commas. |
 
-4. **Create the table** once, against that database:
+4. **Deploy.** Railway runs `npm run build`, then `npm run db:migrate` as the pre-deploy step, then `npm start`; Next binds to `$PORT` on its own.
 
-   ```bash
-   DATABASE_URL='...' npm run db:migrate
-   ```
-
-5. **Deploy.** Railway runs `npm run build` then `npm start`; Next binds to `$PORT` on its own.
+Migrations run on every deploy, before the new release takes traffic, so a release can never serve code expecting a table the database does not have. With no `DATABASE_URL` the step logs that it skipped and the deploy proceeds.
 
 Set a custom domain before printing the QR sign — the QR encodes whichever address the app is opened on.
 
@@ -96,6 +92,6 @@ npm run build
 - `npm test` — unit tests plus the profile endpoint's authorization guards
 - `npm run lint` — ESLint over `app/`, `db/`, and `tests/`
 - `npm run db:generate` — regenerate migrations after editing `db/schema.ts`
-- `npm run db:migrate` — apply migrations to `DATABASE_URL`
+- `npm run db:migrate` — apply pending migrations to `DATABASE_URL` (also the deploy's pre-deploy step)
 
 Local configuration goes in `.env.local` (gitignored). See `.env.example`.
